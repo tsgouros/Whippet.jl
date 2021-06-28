@@ -42,6 +42,8 @@ function process_reads!( parser, param::AlignParam, lib::GraphLib, quant::GraphL
                          multi::MultiMapping{SGAlignSingle}, mod::B;
                          bufsize=150, sam=false, qualoffset=33 ) where B <: BiasModel
 
+#   println("||||$(param)||||||||$(quant)||||")
+
    reads  = allocate_fastq_records( bufsize )
    mean_readlen = 0.0
    total        = 0
@@ -50,13 +52,48 @@ function process_reads!( parser, param::AlignParam, lib::GraphLib, quant::GraphL
       stdbuf = BufferedOutputStream( stdout )
       write_sam_header( stdbuf, lib )
    end
+
+   fqfile = open("trash.fastq", "w")
+   fqwriter = FASTQ.Writer(fqfile)
+
    while length(reads) > 0
       read_chunk!( reads, parser )
       total += length(reads)
+      println(stderr, "$(length(reads)) reads/$total............")
       @inbounds for i in 1:length(reads)
+#= Lots of these 'reads' objects have an 'EMPTY SEQUENCE' and the ones that do not
+   appear to have a sequence that does not match the .sequence data.  Here's one.
+
+Whippet.FASTQRecord(< EMPTY SEQUENCE >, UInt8[], FASTX.FASTQ.Record:
+   identifier: HISEQ:587:C6RMKANXX:1:1307:3191:12232/1
+  description: <missing>
+     sequence: CTCAGAGTGAAAGGCTGGAAAACAAATTTCCAAGCAAATGGTCTGAAGAAACAAGCTGGAGTAGCCATTCTAATATCGAATAAAATCGACTTCCAACCCAAAGTTATCAAAAAAGACAAGGAGGGA
+      quality: UInt8[...])
+=#
+#         println(stderr, ">>>$(reads[i])")
+#         println(stderr, "***$(reads[i].raw)")
+#	 println(stderr, "^^^$(first(reads[i].raw.sequence))^^^$(last(reads[i].raw.sequence))")
          fill!( reads[i], qualoffset )
+#= The 'fill' this refers to appears to be that it fills in the EMPTY SEQUENCE with
+   the sequence in the '.sequence' field.
+=#
+#	 println(stderr, "<<<$(reads[i])")
          align = ungapped_align( param, lib, reads[i] )
          if !isnull( align )
+            println("+++$(total + i)++++$(align)+++++$(reads[i])")
+	    println("...$(reads[i].sequence)...$(length(reads[i].sequence))...$(reads[i].raw.sequence)")
+# Without the if statement, this doesn't seem to write enough records. FYI.
+            if lib.names[first(first(align.value).path).gene] == "ENSMUSG00000028228"
+               write(fqwriter, reads[i].raw)
+            end
+	    for k in 1:length(align.value)
+               println("___$(k)_$(align.value[k].path)")
+               for m in 1:length(align.value[k].path)
+                  println("---$(k)-$m-$(align.value[k].path[m].gene)--$(lib.names[align.value[k].path[m].gene])")
+                  println("===$k=$m=$(align.value[k].path[m].node)")
+                  println(":::$k:$m:$(align.value[k].path[m].score.matches)::$(align.value[k].path[m].score.mismatches)::$(align.value[k].path[m].score.mistolerance)")
+               end
+            end
             biasval = count!( mod, reads[i].sequence )
             if length( align.value ) > 1
                push!( multi, align.value, biasval, quant, lib )
@@ -72,6 +109,7 @@ function process_reads!( parser, param::AlignParam, lib::GraphLib, quant::GraphL
       if total % 100000 == 0
          GC.gc()
       end
+   close(fqfile)
    end # end while
    if sam
       close(stdbuf)
