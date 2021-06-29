@@ -80,19 +80,23 @@ Whippet.FASTQRecord(< EMPTY SEQUENCE >, UInt8[], FASTX.FASTQ.Record:
 #	 println(stderr, "<<<$(reads[i])")
          align = ungapped_align( param, lib, reads[i] )
          if !isnull( align )
-            println("+++$(total + i)++++$(align)+++++$(reads[i])")
-	    println("...$(reads[i].sequence)...$(length(reads[i].sequence))...$(reads[i].raw.sequence)")
-# Without the if statement, this doesn't seem to write enough records. FYI.
-            if lib.names[first(first(align.value).path).gene] == "ENSMUSG00000028228"
-               write(fqwriter, reads[i].raw)
-            end
+            descString = ""
 	    for k in 1:length(align.value)
-               println("___$(k)_$(align.value[k].path)")
                for m in 1:length(align.value[k].path)
-                  println("---$(k)-$m-$(align.value[k].path[m].gene)--$(lib.names[align.value[k].path[m].gene])")
-                  println("===$k=$m=$(align.value[k].path[m].node)")
-                  println(":::$k:$m:$(align.value[k].path[m].score.matches)::$(align.value[k].path[m].score.mismatches)::$(align.value[k].path[m].score.mistolerance)")
+                  descString *= lib.names[align.value[k].path[m].gene] * ":";
+                  descString *= string(align.value[k].path[m].node) * "(";
+                  descString *= string(align.value[k].path[m].score.matches) * ",";
+                  descString *= string(align.value[k].path[m].score.mismatches) * ",";
+                  descString *= string(align.value[k].path[m].score.mistolerance) * ")/";
                end
+            end
+            ## Writes a FASTQ file for any reads that match the given gene.
+            if lib.names[first(first(align.value).path).gene] == "ENSMUSG00000040653"
+               write(fqwriter,
+                     FASTQ.Record(identifier(reads[i].raw),
+                                  descString,
+                                  sequence(reads[i].raw),
+                                  quality(reads[i].raw); offset=33));
             end
             biasval = count!( mod, reads[i].sequence )
             if length( align.value ) > 1
