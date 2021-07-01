@@ -42,8 +42,6 @@ function process_reads!( parser, param::AlignParam, lib::GraphLib, quant::GraphL
                          multi::MultiMapping{SGAlignSingle}, mod::B;
                          bufsize=150, sam=false, qualoffset=33 ) where B <: BiasModel
 
-#   println("||||$(param)||||||||$(quant)||||")
-
    reads  = allocate_fastq_records( bufsize )
    mean_readlen = 0.0
    total        = 0
@@ -53,13 +51,13 @@ function process_reads!( parser, param::AlignParam, lib::GraphLib, quant::GraphL
       write_sam_header( stdbuf, lib )
    end
 
-   fqfile = open("trash.fastq", "w")
+   fqfile = open("BTLA-A1.fastq", "w")
    fqwriter = FASTQ.Writer(fqfile)
 
    while length(reads) > 0
       read_chunk!( reads, parser )
       total += length(reads)
-      println(stderr, "$(length(reads)) reads/$total............")
+#      println(stderr, "$(length(reads)) reads/$total............")
       @inbounds for i in 1:length(reads)
 #= Lots of these 'reads' objects have an 'EMPTY SEQUENCE' and the ones that do not
    appear to have a sequence that does not match the .sequence data.  Here's one.
@@ -70,16 +68,14 @@ Whippet.FASTQRecord(< EMPTY SEQUENCE >, UInt8[], FASTX.FASTQ.Record:
      sequence: CTCAGAGTGAAAGGCTGGAAAACAAATTTCCAAGCAAATGGTCTGAAGAAACAAGCTGGAGTAGCCATTCTAATATCGAATAAAATCGACTTCCAACCCAAAGTTATCAAAAAAGACAAGGAGGGA
       quality: UInt8[...])
 =#
-#         println(stderr, ">>>$(reads[i])")
-#         println(stderr, "***$(reads[i].raw)")
-#	 println(stderr, "^^^$(first(reads[i].raw.sequence))^^^$(last(reads[i].raw.sequence))")
          fill!( reads[i], qualoffset )
 #= The 'fill' this refers to appears to be that it fills in the EMPTY SEQUENCE with
    the sequence in the '.sequence' field.
 =#
-#	 println(stderr, "<<<$(reads[i])")
          align = ungapped_align( param, lib, reads[i] )
          if !isnull( align )
+            ## Builds us a little description string to contain scores of the matches
+            ## and mismatches for this gene.
             descString = ""
 	    for k in 1:length(align.value)
                for m in 1:length(align.value[k].path)
@@ -91,7 +87,7 @@ Whippet.FASTQRecord(< EMPTY SEQUENCE >, UInt8[], FASTX.FASTQ.Record:
                end
             end
             ## Writes a FASTQ file for any reads that match the given gene.
-            if lib.names[first(first(align.value).path).gene] == "ENSMUSG00000040653"
+            if lib.names[first(first(align.value).path).gene] == "ENSMUSG00000052013"
                write(fqwriter,
                      FASTQ.Record(identifier(reads[i].raw),
                                   descString,
@@ -113,8 +109,10 @@ Whippet.FASTQRecord(< EMPTY SEQUENCE >, UInt8[], FASTX.FASTQ.Record:
       if total % 100000 == 0
          GC.gc()
       end
-   close(fqfile)
    end # end while
+
+   close(fqfile)
+
    if sam
       close(stdbuf)
    end
