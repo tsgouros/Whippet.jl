@@ -87,7 +87,8 @@ Whippet.FASTQRecord(< EMPTY SEQUENCE >, UInt8[], FASTX.FASTQ.Record:
                end
             end
             ## Writes a FASTQ file for any reads that match the given gene.
-            if lib.names[first(first(align.value).path).gene] == "ENSMUSG00000052013"
+	    println(stdout, ">>$(lib.names[first(first(align.value).path).gene])")
+            if lib.names[first(first(align.value).path).gene] == "Btla"
                write(fqwriter,
                      FASTQ.Record(identifier(reads[i].raw),
                                   descString,
@@ -134,6 +135,11 @@ function process_paired_reads!( fwd_parser, rev_parser, param::AlignParam,
       stdbuf = BufferedOutputStream( stdout )
       write_sam_header( stdbuf, lib )
    end
+
+   fqfile = open("BTLA.fastq", "w")
+   fqwriter = FASTQ.Writer(fqfile)
+   fqtextfile = open("reads.txt", "w")
+    
    while length(fwd_reads) > 0 && length(rev_reads) > 0
       read_chunk!( fwd_reads, fwd_parser )
       read_chunk!( rev_reads, rev_parser )
@@ -143,6 +149,34 @@ function process_paired_reads!( fwd_parser, rev_parser, param::AlignParam,
          fill!( rev_reads[i], qualoffset )
          fwd_aln,rev_aln = ungapped_align( param, lib, fwd_reads[i], rev_reads[i] )
          if !isnull( fwd_aln ) && !isnull( rev_aln )
+
+            ## Builds us a little description string to contain scores
+	    ## of the matches and mismatches for this gene.
+            descString = ""
+	    for k in 1:length(fwd_aln.value)
+               for m in 1:length(fwd_aln.value[k].path)
+                  descString *= lib.names[fwd_aln.value[k].path[m].gene] * ":";
+                  descString *= string(fwd_aln.value[k].path[m].node) * "(";
+                  descString *= string(fwd_aln.value[k].path[m].score.matches) * ",";
+                  descString *= string(fwd_aln.value[k].path[m].score.mismatches) * ",";
+                  descString *= string(fwd_aln.value[k].path[m].score.mistolerance) * ")/";
+               end
+            end
+            write(fqtextfile, identifier(fwd_reads[i].raw) * "/" * descString *"\n")
+            ## Writes a FASTQ file for any reads that match the given gene.
+            if lib.names[first(first(fwd_aln.value).path).gene] == "Btla"
+                println(stdout, "****$(fwd_reads[i].raw)")
+                println(stdout, "****$(identifier(fwd_reads[i].raw))")
+                println(stdout, "****$(sequence(fwd_reads[i].raw))")
+                println(stdout, "****$(quality(fwd_reads[i].raw))")
+                write(fqwriter,
+                     FASTQ.Record(identifier(fwd_reads[i].raw),
+                                  descString,
+                                  sequence(fwd_reads[i].raw),
+                                  quality(fwd_reads[i].raw); offset=33));
+            end
+
+
             biasval = count!( mod, fwd_reads[i].sequence, rev_reads[i].sequence )
             if length( fwd_aln.value ) > 1
                push!( multi, fwd_aln.value, rev_aln.value, biasval, quant, lib )
@@ -162,6 +196,7 @@ function process_paired_reads!( fwd_parser, rev_parser, param::AlignParam,
          end
       end
    end # end while
+   close(fqtextfile)
    if sam
       close(stdbuf)
    end
