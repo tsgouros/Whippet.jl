@@ -1,3 +1,6 @@
+struct GeneData
+    mismatches::Array{Int32,1}
+end
 
 function make_fqparser( filename; forcegzip=false )
    fopen = open( filename, "r" )
@@ -124,7 +127,7 @@ end
 function process_paired_reads!( fwd_parser, rev_parser, param::AlignParam,
                                 lib::GraphLib, quant::GraphLibQuant,
                                 multi::MultiMapping{SGAlignPaired}, mod::B;
-                                bufsize=50, sam=false, qualoffset=33 ) where B <: BiasModel
+                                bufsize=150, sam=false, qualoffset=33 ) where B <: BiasModel
 
    fwd_reads  = allocate_fastq_records( bufsize )
    rev_reads  = allocate_fastq_records( bufsize )
@@ -138,7 +141,12 @@ function process_paired_reads!( fwd_parser, rev_parser, param::AlignParam,
 
    fqfile = open("BTLA.fastq", "w")
    fqwriter = FASTQ.Writer(fqfile)
-   fqtextfile = open("reads.txt", "w")
+
+##    GeneData() = GeneData(zeros(Int32,21))
+
+    println("HI THERE\n")
+    
+    Reads = Dict{String, GeneData}()
     
    while length(fwd_reads) > 0 && length(rev_reads) > 0
       read_chunk!( fwd_reads, fwd_parser )
@@ -155,20 +163,26 @@ function process_paired_reads!( fwd_parser, rev_parser, param::AlignParam,
             descString = ""
 	    for k in 1:length(fwd_aln.value)
                for m in 1:length(fwd_aln.value[k].path)
-                  descString *= lib.names[fwd_aln.value[k].path[m].gene] * ":";
+                   gene = lib.names[fwd_aln.value[k].path[m].gene] * ":" *
+                       lpad(fwd_aln.value[k].path[m].node,3,"0")
+                   if !(gene in keys(Reads))
+                       Reads[gene] = GeneData(zeros(Int32,21))
+                   end
+                   println(gene * "-" * string(k) * "," * string(m))
+                   println(string(fwd_aln.value[k].path[m]) * "\n")
+                   Reads[gene].mismatches[1 + fwd_aln.value[k].path[m].score.mismatches] += 1
+
+                   descString *= lib.names[fwd_aln.value[k].path[m].gene] * ":";
                   descString *= string(fwd_aln.value[k].path[m].node) * "(";
                   descString *= string(fwd_aln.value[k].path[m].score.matches) * ",";
                   descString *= string(fwd_aln.value[k].path[m].score.mismatches) * ",";
                   descString *= string(fwd_aln.value[k].path[m].score.mistolerance) * ")/";
                end
             end
-            write(fqtextfile, identifier(fwd_reads[i].raw) * "/" * descString *"\n")
+
             ## Writes a FASTQ file for any reads that match the given gene.
             if lib.names[first(first(fwd_aln.value).path).gene] == "Btla"
-                println(stdout, "****$(fwd_reads[i].raw)")
                 println(stdout, "****$(identifier(fwd_reads[i].raw))")
-                println(stdout, "****$(sequence(fwd_reads[i].raw))")
-                println(stdout, "****$(quality(fwd_reads[i].raw))")
                 write(fqwriter,
                      FASTQ.Record(identifier(fwd_reads[i].raw),
                                   descString,
@@ -196,7 +210,13 @@ function process_paired_reads!( fwd_parser, rev_parser, param::AlignParam,
          end
       end
    end # end while
-   close(fqtextfile)
+    println("opening file.............\n")
+    fqtextfile = open("reads.txt", "w")
+    for k in sort(collect(keys(Reads)))
+        write(fqtextfile, k * "," * join(string.(Reads[k].mismatches),",") * "\n")
+    end
+    ## write(fqtextfile, identifier(fwd_reads[i].raw) * "/" * descString *"\n")
+    close(fqtextfile)
    if sam
       close(stdbuf)
    end
